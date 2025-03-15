@@ -1,0 +1,97 @@
+version: '3.8'
+
+services:
+  # Tu API REST
+  api-rest:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "8080:8080"
+    environment:
+      - SPRING_PROFILES_ACTIVE=docker
+      - OTEL_SERVICE_NAME=mi-api-rest
+      - OTEL_TRACES_EXPORTER=otlp
+      - OTEL_METRICS_EXPORTER=otlp
+      - OTEL_EXPORTER_OTLP_ENDPOINT=http://otel-collector:4318
+      - OTEL_EXPORTER_OTLP_PROTOCOL=http/protobuf
+      - JAVA_TOOL_OPTIONS=-Dmanagement.metrics.binders.processor.enabled=false
+    networks:
+      - app-network
+    depends_on:
+      - otel-collector
+    restart: on-failure
+
+  # Colector de OpenTelemetry
+  otel-collector:
+    image: otel/opentelemetry-collector-contrib:latest
+    container_name: otel-collector
+    command: ["--config=/etc/otel-collector-config.yaml"]
+    volumes:
+      - ./otel-collector-config.yaml:/etc/otel-collector-config.yaml
+    ports:
+      - "14317:4317"   # OTLP gRPC (cambiado para evitar conflicto)
+      - "14318:4318"   # OTLP HTTP (cambiado para evitar conflicto)
+      - "8888:8888"    # Métricas del colector
+      - "8889:8889"    # Puerto de Zpages
+    networks:
+      - app-network
+    depends_on:
+      - jaeger
+    restart: unless-stopped
+    # Quitamos completamente el healthcheck para este servicio
+
+  # Jaeger para visualizar trazas
+  jaeger:
+    image: jaegertracing/all-in-one:latest
+    container_name: jaeger
+    ports:
+      - "16686:16686"   # UI de Jaeger
+      - "14250:14250"   # Puerto para el receptor jaeger
+      - "24317:4317"    # Puerto para OTLP gRPC (cambiado para evitar conflicto)
+      - "24318:4318"    # Puerto para OTLP HTTP (cambiado para evitar conflicto)
+    environment:
+      - COLLECTOR_OTLP_ENABLED=true
+      - COLLECTOR_OTLP_GRPC_HOST_PORT=0.0.0.0:4317
+      - COLLECTOR_OTLP_HTTP_HOST_PORT=0.0.0.0:4318
+    networks:
+      - app-network
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:16686"]
+      interval: 5s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+  # Prometheus para métricas
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: prometheus
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml
+    ports:
+      - "9090:9090"
+    networks:
+      - app-network
+    depends_on:
+      - otel-collector
+
+  # Grafana para visualización
+  grafana:
+    image: grafana/grafana:latest
+    container_name: grafana
+    volumes:
+      - grafana-storage:/var/lib/grafana
+    ports:
+      - "3000:3000"
+    networks:
+      - app-network
+    depends_on:
+      - prometheus
+
+networks:
+  app-network:
+    driver: bridge
+
+volumes:
+  grafana-storage:

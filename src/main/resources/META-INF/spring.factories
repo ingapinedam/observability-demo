@@ -1,0 +1,5 @@
+# Este archivo va en src/main/resources/META-INF/spring.factories
+org.springframework.boot.autoconfigure.EnableAutoConfiguration=\
+org.springframework.boot.actuate.autoconfigure.metrics.JvmMetricsAutoConfiguration,\
+org.springframework.boot.actuate.autoconfigure.metrics.LogbackMetricsAutoConfiguration,\
+org.springframework.boot.actuate.autoconfigure.metrics.MetricsAutoConfiguration
